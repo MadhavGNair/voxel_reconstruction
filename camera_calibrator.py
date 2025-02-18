@@ -500,8 +500,7 @@ class CameraCalibrator:
                 )
             # if the corners are not found, compute them manually
             else:
-                continue
-                # local_corners = self.__compute_local_corners(img)
+                local_corners = self.__compute_local_corners(img)
 
             # append the object points and image points
             self.global_obj_points.append(self.obj_points)
