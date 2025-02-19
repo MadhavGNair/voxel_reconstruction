@@ -293,12 +293,11 @@ def get_intrinsics_values():
             calibrator = CameraCalibrator(image_path, (width, height), square_size)
             calibrator.draw_axes_and_cube(image_path, intrinsics_path, save=False)
 
-
 def get_extrinsics_values():
     extract_frame = False
     calibrate = False
     display = False
-    draw_axes = True
+    draw_axes = False
 
     tree = etree.parse("./data/checkerboard.xml")
     root = tree.getroot()
@@ -367,5 +366,5 @@ def get_extrinsics_values():
 
 
 if __name__ == "__main__":
-    # get_intrinsics_values()
-    get_extrinsics_values()
+    get_intrinsics_values()
+    # get_extrinsics_values()
