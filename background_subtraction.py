@@ -12,7 +12,7 @@ class BackgroundSubtractor:
     def __create_background_model(self, var_threshold=64):
         cap = cv2.VideoCapture(self.background_path)
 
-        gmm = cv2.createBackgroundSubtractorMOG2(varThreshold=var_threshold, detectShadows=True)
+        gmm = cv2.createBackgroundSubtractorMOG2(history=100, varThreshold=var_threshold, detectShadows=True)
 
         while True:
             ret, frame = cap.read()
@@ -24,11 +24,15 @@ class BackgroundSubtractor:
         cap.release()
 
         self.background_model = gmm
-    # 50, 10, 40
-    def __background_subtraction(self, frame, h_threshold=50, s_threshold=10, v_threshold=40):
+
+    # 50, 10, 25
+    def __background_subtraction(self, frame, h_threshold=50, s_threshold=10, v_threshold=25):
         gmm_mask = self.background_model.apply(frame, learningRate=0.0001)
+        
+        # remove shadows
         ret, gmm_mask = cv2.threshold(gmm_mask, 250, 255, cv2.THRESH_BINARY)
 
+        # threshold HSV values
         frame_hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
         background = self.background_model.getBackgroundImage()
         background_hsv = cv2.cvtColor(background, cv2.COLOR_BGR2HSV)
@@ -51,24 +55,24 @@ class BackgroundSubtractor:
         combined_mask = cv2.bitwise_and(gmm_mask, hsv_mask)
         
         # apply morphological operations to remove noise
-        kernel = np.ones((5,5), np.uint8)
+        kernel = np.ones((2,2), np.uint8)
         combined_mask = cv2.dilate(combined_mask, kernel, iterations=1)
         combined_mask = cv2.erode(combined_mask, kernel, iterations=1)
 
-        internal_contours, _ = cv2.findContours(combined_mask, cv2.RETR_CCOMP,cv2.CHAIN_APPROX_SIMPLE)
+        internal_contours, _ = cv2.findContours(combined_mask, cv2.RETR_CCOMP, cv2.CHAIN_APPROX_SIMPLE)
 
-        # set the threshold area to the average of the two largest internal contours
+        # set the threshold area to the average of the second and third largest internal contours
         internal_areas = [cv2.contourArea(contour) for contour in internal_contours]
         internal_areas.sort()
-        if len(internal_areas) >= 2:
-            internal_threshold_area = internal_areas[-2] + (internal_areas[-1] - internal_areas[-2]) / 2
+        if len(internal_areas) >= 3:
+            internal_threshold_area = internal_areas[-3] + (internal_areas[-2] - internal_areas[-3]) / 2
         else:
             internal_threshold_area = 7000
 
         # fill holes inside foreground
         for contour in internal_contours:
             area = cv2.contourArea(contour)
-            if area < internal_threshold_area:
+            if area <= internal_threshold_area:
                 cv2.drawContours(combined_mask, [contour], 0, 255, -1)
 
         external_contours, _ = cv2.findContours(combined_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
@@ -84,11 +88,12 @@ class BackgroundSubtractor:
         # remove pixels outside foreground
         for contour in external_contours:
             area = cv2.contourArea(contour)
-            if area < external_threshold_area:
+            if area <= external_threshold_area:
                 cv2.drawContours(combined_mask, [contour], -1, 0, cv2.FILLED)
+
         return combined_mask, frame
         
-    def isolate_foreground(self, output_folder="./output"):
+    def isolate_foreground(self, output_folder="./output", display_frames=False):
         self.__create_background_model()
 
         cap = cv2.VideoCapture(self.video_path)
@@ -101,13 +106,15 @@ class BackgroundSubtractor:
             return
 
         combined_mask, frame = self.__background_subtraction(frame)
-        
-        cv2.imshow('Combined Mask', combined_mask)
-        cv2.imshow('Frame', frame)
-        cv2.waitKey(0)
+
+        if display_frames:
+            cv2.imshow('Combined Mask', combined_mask)
+            cv2.imshow('Frame', frame)
+            cv2.waitKey(0)
 
         cap.release()
         cv2.destroyAllWindows()
+        return combined_mask, frame
 
 
 if __name__ == "__main__":
@@ -116,5 +123,5 @@ if __name__ == "__main__":
         video_path = f"./data/cam{i}/video.avi"
 
         background_subtractor = BackgroundSubtractor(video_path, background_path)
-        background_subtractor.isolate_foreground()
+        combined_mask, frame = background_subtractor.isolate_foreground(display_frames=True)
         

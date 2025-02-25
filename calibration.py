@@ -5,6 +5,7 @@ import os
 import cv2
 import numpy as np
 from lxml import etree
+import matplotlib.pyplot as plt
 
 from camera_calibrator import CameraCalibrator
 
@@ -207,7 +208,6 @@ def draw_axes_and_cube(
         cv2.imwrite(save_path, img)
         print(f"Image with axes drawn saved to {save_path}")
 
-
 def extract_frames(video_path, output_folder, frame_interval):
     if not os.path.exists(output_folder):
         os.makedirs(output_folder)
@@ -327,7 +327,7 @@ def get_extrinsics_values():
     # load the intrinsic values
     if calibrate:
         for camera_name in camera_names:
-            cam_matrix, dist_coeffs, _, _ = load_calibration_data(
+            cam_matrix, dist_coeffs, _, _ = load_intrinsic_data(
                 f"./data/intrinsic_values/{camera_name}.json"
             )
             image_path = f"./data/{camera_name}/extrinsic_frames/frame_0000.jpg"
