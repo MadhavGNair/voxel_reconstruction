@@ -1,14 +1,14 @@
 import glm
 import random
 import numpy as np
-import xml.etree.ElementTree as ET
 import cv2
-from voxel_reconstruction import VoxelReconstruction
+import xml.etree.ElementTree as ET
+from voxel_reconstruction import VoxelReconstructor
 
 block_size = 1.0
 
-# Generate the floor grid locations
 def generate_grid(width, depth):
+    # Generates the floor grid locations
     # You don't need to edit this function
     data, colors = [], []
     for x in range(width):
@@ -17,23 +17,32 @@ def generate_grid(width, depth):
             colors.append([1.0, 1.0, 1.0] if (x+z) % 2 == 0 else [0, 0, 0])
     return data, colors
 
-
 def set_voxel_positions(width, height, depth):
-    # Generates voxel locations based on the VoxelReconstruction class.
-    base_camera_data_path = "./data" # Directory containing cam1, cam2, etc.
-    frame_dims = (644, 486)
-    min_cameras_required = 4
-    vr = VoxelReconstruction(base_camera_data_path, width, height, depth, block_size, frame_dims, min_cameras_required=min_cameras_required) #pass in min cameras
-    vr.reconstruct_from_frames() #reconstruct the model
+    # Generates voxel locations from reconstruction and adds grid edges
+    print(width, height, depth)
+    vr = VoxelReconstructor(width, height, depth, (644, 486))
     data, colors = [], []
+    
+    # Add voxels from reconstruction
     for x in range(width):
         for y in range(height):
             for z in range(depth):
-                if vr.voxel_space[x, y, z] == 1:  #Check if the voxel is occupied
-                    data.append([x*block_size - width/2, - (z*block_size - depth/2), y*block_size])
-                    colors.append(vr.voxel_colors[x, y, z] / 255.0)
+                if vr.voxel_space[x, y, z, 0] >= 4:  # If all 4 cameras see this voxel
+                    data.append([x*block_size - width/2, -(z*block_size - depth/2), y*block_size])
+                    camera_count = vr.voxel_space[x, y, z, 0]
+                    # r = vr.voxel_space[x, y, z, 1] / camera_count
+                    # g = vr.voxel_space[x, y, z, 2] / camera_count
+                    # b = vr.voxel_space[x, y, z, 3] / camera_count
+                    
+                    # Normalize to [0,1] range for rendering
+                    # colors.append([r/255.0, g/255.0, b/255.0])
+                    # Create a gradient based on the voxel position
+                    r = x / width  # Red varies with x position
+                    g = y / height  # Green varies with y position
+                    b = z / depth   # Blue varies with z position
+                    colors.append([r, g, b])
+    
     return data, colors
-
 
 def load_camera_parameters(camera_data_path):
     try:
@@ -61,7 +70,7 @@ def get_cam_positions():
         R, _ = cv2.Rodrigues(rvec)
         position = -np.matrix(R).T * np.matrix(tvec).T * scale
         # OpenGL uses Y-up, but the camera uses Z-up, so we need to flip the Y-axis
-        cam_positions.append([position[0], -position[2], position[1]])
+        cam_positions.append([position[0], position[2], position[1]])
 
     cam_colors = [[1.0, 0, 0], [0, 1.0, 0], [0, 0, 1.0], [1.0, 1.0, 0]]
     return cam_positions, cam_colors
@@ -83,6 +92,8 @@ def get_cam_rotation_matrices():
         cam_rotation = cam_rotation.T
 
         flattened_matrix = cam_rotation.flatten()
-        # rotate the camera -90 degrees around the Z-axis for correct viewing direction
-        cam_rotations.append(glm.mat4(*flattened_matrix) * glm.rotate(-np.pi/2, glm.vec3(0, 0, 1)))
+        # rotate the camera 90 degrees around the Z-axis for correct viewing direction
+        cam_rotations.append(glm.mat4(*flattened_matrix) * glm.rotate(np.pi/2, glm.vec3(0, 0, 1)))
     return cam_rotations
+
+

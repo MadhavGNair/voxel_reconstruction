@@ -26,7 +26,7 @@ class BackgroundSubtractor:
         self.background_model = gmm
 
     # 50, 10, 25
-    def __background_subtraction(self, frame, h_threshold=50, s_threshold=10, v_threshold=25):
+    def __background_subtraction(self, frame, h_threshold=10, s_threshold=40, v_threshold=60):
         gmm_mask = self.background_model.apply(frame, learningRate=0.0001)
         
         # remove shadows
@@ -50,14 +50,16 @@ class BackgroundSubtractor:
         ret, v_mask = cv2.threshold(v_mask, v_threshold, 255, cv2.THRESH_BINARY)
         
         # or and and
-        hsv_mask = cv2.bitwise_or(cv2.bitwise_and(v_mask, s_mask), h_mask)
+        hsv_mask = cv2.bitwise_or(cv2.bitwise_or(v_mask, s_mask), h_mask)
 
         combined_mask = cv2.bitwise_and(gmm_mask, hsv_mask)
         
         # apply morphological operations to remove noise
         kernel = np.ones((2,2), np.uint8)
-        combined_mask = cv2.dilate(combined_mask, kernel, iterations=1)
         combined_mask = cv2.erode(combined_mask, kernel, iterations=1)
+        combined_mask = cv2.dilate(combined_mask, kernel, iterations=1)
+
+        # combined_mask = cv2.medianBlur(combined_mask, 5)
 
         internal_contours, _ = cv2.findContours(combined_mask, cv2.RETR_CCOMP, cv2.CHAIN_APPROX_SIMPLE)
 
@@ -100,21 +102,26 @@ class BackgroundSubtractor:
         if not cap.isOpened():
             raise ValueError("Failed to open video file")
 
-        # while True:
-        ret, frame = cap.read()
-        if not ret:
-            return
+        masks_and_frames = []
+        
+        # Process all frames in the video
+        while True:
+            ret, frame = cap.read()
+            if not ret:
+                break
 
-        combined_mask, frame = self.__background_subtraction(frame)
+            combined_mask, frame = self.__background_subtraction(frame)
+            masks_and_frames.append((combined_mask, frame))
 
-        if display_frames:
-            cv2.imshow('Combined Mask', combined_mask)
-            cv2.imshow('Frame', frame)
-            cv2.waitKey(0)
+            if display_frames:
+                cv2.imshow('Combined Mask', combined_mask)
+                cv2.imshow('Frame', frame)
+                if cv2.waitKey(1) & 0xFF == ord('q'):
+                    break
 
         cap.release()
         cv2.destroyAllWindows()
-        return combined_mask, frame
+        return masks_and_frames[5]
 
 
 if __name__ == "__main__":
@@ -123,5 +130,19 @@ if __name__ == "__main__":
         video_path = f"./data/cam{i}/video.avi"
 
         background_subtractor = BackgroundSubtractor(video_path, background_path)
-        combined_mask, frame = background_subtractor.isolate_foreground(display_frames=True)
+        masks_and_frames = background_subtractor.isolate_foreground(display_frames=True)
+        print(f"Processed {len(masks_and_frames)} frames for camera {i}")
+
+        # # display the mask and frame
+        # cv2.imshow('Mask', masks_and_frames[0])
+        # # Create a copy of the frame to draw on
+        # frame_with_mask = masks_and_frames[1].copy()
         
+        # # Draw the foreground (white pixels in mask) in red on the frame
+        # frame_with_mask[masks_and_frames[0] > 0] = [0, 0, 255]  # BGR format: red is [0,0,255]
+        
+        # cv2.imshow('Frame with Foreground', frame_with_mask)
+        # cv2.waitKey(0)
+        # cv2.destroyAllWindows()
+
+
