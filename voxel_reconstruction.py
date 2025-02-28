@@ -3,6 +3,9 @@ import cv2
 import numpy as np
 import pickle
 import os
+import time
+import concurrent.futures
+import multiprocessing as mp
 from tqdm import tqdm
 from background_subtraction import BackgroundSubtractor
 
@@ -14,89 +17,10 @@ class VoxelReconstructor:
         self.cameras = self._load_cameras()
         self.width, self.height, self.depth = width, height, depth
         self.scale = 25
-        self.project_space()
+        self.lookup_table_path = f"./lookup_table_{self.width}x{self.height}x{self.depth}_{self.scale}.pkl"
+        self._load_lookup_table()
         self.voxel_space = np.zeros((self.width, self.height, self.depth, 4), dtype=np.uint8)
 
-        for camera in self.cameras:
-            camera_id = camera['id']
-            background_model = BackgroundSubtractor(f'./data/cam{camera_id}/video.avi', f'./data/cam{camera_id}/background.avi')
-            mask, frame = background_model.isolate_foreground()
-            voxel_space = self.back_project_silhouette(mask, frame, camera_id)
-            self.voxel_space += voxel_space
-
-    def back_project_silhouette(self, binary_mask, image, camera_id):
-        voxel_space = np.zeros((self.width, self.height, self.depth, 4), dtype=np.uint8)
-        contour_2d = []
-        for x in range(binary_mask.shape[0]):
-            for y in range(binary_mask.shape[1]):
-                if binary_mask[x][y] > 0:
-                    contour_2d.append((y, x))
-        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-
-        contour_2d = np.array(contour_2d).squeeze()
-        contour_voxels = []
-        contour_colors = []
-        for points in tqdm(contour_2d):
-            try:
-                point_voxels = self.lookup_table[camera_id - 1, int(points[0]), int(points[1])]
-            except:
-                continue
-            if point_voxels is None:
-                continue
-            
-            # Store each voxel in the set along with the corresponding color
-            for voxel in point_voxels:
-                contour_voxels.append(voxel)
-                contour_colors.append(image[int(points[1]), int(points[0])])  # Note: x,y order for image indexing
-        
-        # Process each voxel and its color
-        for voxel, color in zip(contour_voxels, contour_colors):
-            # Unpack the voxel coordinates from the tuple
-            x, y, z = voxel
-            voxel_space[x, y, z, 0] += 1
-            voxel_space[x, y, z, 1] = color[0]
-            voxel_space[x, y, z, 2] = color[1]
-            voxel_space[x, y, z, 3] = color[2]
-            
-        print(f'Voxel space for camera {camera_id} has {np.sum(voxel_space[:,:,:,0])} voxels out of {self.width * self.height * self.depth}')
-        return voxel_space
-
-    def project_space(self):
-        if os.path.exists('lookup_table.pkl'):
-            with open('lookup_table.pkl', 'rb') as file:
-                self.lookup_table = pickle.load(file)
-            return
-                                  
-        for camera in self.cameras:
-            for x in tqdm(range(self.width)):
-                for y in range(self.height):
-                    for z in range(self.depth):
-                        voxel = np.array([
-                            x * self.scale - self.width / 2 * self.scale, 
-                            y * self.scale, 
-                            z * self.scale - self.depth / 2 * self.scale,
-                                        ], dtype=np.float32)
-                        
-                        projected, _ = cv2.projectPoints(voxel, #np.dot(voxel, rotation_matrix), 
-                                                       camera['RotationVectors'],
-                                                       camera['TranslationVectors'], 
-                                                       camera['CameraMatrix'], 
-                                                       camera['DistortionCoefficients'])
-                        projected = np.int32(projected).squeeze()
-                        # print(f'Camera {camera["id"]} projected {voxel} to {projected}')
-                        if not self.point_in_bounds(projected):
-                            continue
-                        if self.lookup_table[camera['id'] - 1, projected[0], projected[1]] is None:
-                            self.lookup_table[camera['id'] - 1, projected[0], projected[1]] = set()
-                        self.lookup_table[camera['id'] - 1, projected[0], projected[1]].add((x, y, z))
-
-        with open('lookup_table.pkl', 'wb') as file:
-            pickle.dump(self.lookup_table, file)
-        return
-    
-    def point_in_bounds(self, point):
-        return not (point[0] < 0 or point[0] >= self.frame_dim[0] or point[1] < 0 or point[1] >= self.frame_dim[1])
-    
     def _load_cameras(self):
         """Load camera parameters for all cameras."""
         cameras = []
@@ -126,3 +50,317 @@ class VoxelReconstructor:
         except Exception as e:
             print(f"Error loading camera parameters: {e}")
             return None, None, None, None
+
+    def _process_camera_process_pool(self, camera_data):
+        """
+        Process a single camera's voxels for the lookup table.
+        This function is designed to be used with ProcessPoolExecutor.
+        """
+        camera_id, rotation_vectors, translation_vectors, camera_matrix, distortion_coeffs = camera_data
+        
+        # Create a local lookup table for this camera
+        local_lookup = {}
+        
+        # Process all voxels for this camera
+        for x in tqdm(range(self.width), desc=f"Processing voxels for camera {camera_id}", leave=False):
+            for y in range(self.height):
+                for z in range(self.depth):
+                    voxel = np.array([
+                        x * self.scale - self.width / 2 * self.scale, 
+                        y * self.scale, 
+                        z * self.scale - self.depth / 2 * self.scale,
+                    ], dtype=np.float32)
+                    
+                    projected, _ = cv2.projectPoints(
+                        voxel,
+                        rotation_vectors,
+                        translation_vectors, 
+                        camera_matrix, 
+                        distortion_coeffs
+                    )
+                    
+                    projected = np.int32(projected).squeeze()
+                    
+                    # Check if point is in bounds
+                    if (projected[0] < 0 or projected[0] >= self.frame_dim[0] or 
+                        projected[1] < 0 or projected[1] >= self.frame_dim[1]):
+                        continue
+                    
+                    # Store in local dictionary
+                    key = (projected[0], projected[1])
+                    if key not in local_lookup:
+                        local_lookup[key] = set()
+                    local_lookup[key].add((x, y, z))
+        
+        return camera_id, local_lookup
+
+    def _load_lookup_table(self):
+        """
+        Creates the lookup table using ProcessPoolExecutor for parallelization.
+        This approach uses separate processes to avoid GIL limitations.
+        """
+        print(f"Creating lookup table with ProcessPoolExecutor for dimensions {self.width}x{self.height}x{self.depth} with scale {self.scale}")
+        
+        # Initialize lookup table
+        self.lookup_table = np.empty((4, self.frame_dim[0], self.frame_dim[1]), dtype=object)
+        
+        # Measure execution time
+        start_time = time.time()
+        
+        # Prepare camera data for processing
+        camera_data_list = []
+        for camera in self.cameras:
+            camera_data = (
+                camera['id'],
+                camera['RotationVectors'],
+                camera['TranslationVectors'],
+                camera['CameraMatrix'],
+                camera['DistortionCoefficients']
+            )
+            camera_data_list.append(camera_data)
+        
+        # Use ProcessPoolExecutor to process cameras in parallel
+        with concurrent.futures.ProcessPoolExecutor(max_workers=min(4, mp.cpu_count())) as executor:
+            futures = []
+            for camera_data in camera_data_list:
+                futures.append(executor.submit(self._process_camera_process_pool, camera_data))
+            
+            # Process results as they complete
+            for future in tqdm(concurrent.futures.as_completed(futures), 
+                              total=len(futures),
+                              desc="Processing cameras with ProcessPoolExecutor"):
+                try:
+                    camera_id, local_lookup = future.result()
+                    
+                    # Transfer local lookup to the main lookup table
+                    for (px, py), voxel_set in local_lookup.items():
+                        if self.lookup_table[camera_id - 1, px, py] is None:
+                            self.lookup_table[camera_id - 1, px, py] = set()
+                        self.lookup_table[camera_id - 1, px, py].update(voxel_set)
+                        
+                except Exception as exc:
+                    print(f'Camera processing exception: {exc}')
+        
+        # Calculate and print execution time
+        end_time = time.time()
+        execution_time = end_time - start_time
+        print(f"ProcessPoolExecutor lookup table creation completed in {execution_time:.2f} seconds")
+        
+        # Save the lookup table
+        print(f"Saving lookup table to {self.lookup_table_path}")
+        with open(self.lookup_table_path, 'wb') as file:
+            pickle.dump(self.lookup_table, file)
+        return
+
+    def _point_in_bounds(self, point):
+        return not (point[0] < 0 or point[0] >= self.frame_dim[0] or point[1] < 0 or point[1] >= self.frame_dim[1])
+
+    def _process_pixel_batch(self, camera_id, rgb_frame, batch_pixels):
+        """Process a batch of pixels in parallel"""
+        batch_results = []
+        
+        for point in batch_pixels:
+            try:
+                point_voxels = self.lookup_table[camera_id - 1, int(point[0]), int(point[1])]
+                if point_voxels is not None:
+                    color = rgb_frame[int(point[1]), int(point[0])]
+                    for voxel in point_voxels:
+                        batch_results.append((voxel, color))
+            except:
+                continue
+                
+        return batch_results
+
+    def _update_voxel_batch(self, voxel_batch, temp_voxel_space):
+        """Process a batch of voxels for final voxel space construction"""
+        local_voxel_space = np.zeros((self.width, self.height, self.depth, 4), dtype=np.uint8)
+        count = 0
+        
+        for voxel, color in voxel_batch:
+            x, y, z = voxel
+            if temp_voxel_space[x, y, z] > 0:
+                local_voxel_space[x, y, z, 0] = 1  # Mark as occupied
+                local_voxel_space[x, y, z, 1:] = color  # Set color
+                count += 1
+                
+        return local_voxel_space, count
+
+    def reconstruct_voxels(self, masks_and_frames, camera_id):
+        # Initialize voxel spaces
+        temp_voxel_space = np.zeros((self.width, self.height, self.depth), dtype=np.uint8)
+        voxel_space = np.zeros((self.width, self.height, self.depth, 4), dtype=np.uint8)
+        
+        if not masks_and_frames:
+            return voxel_space
+            
+        # Process first frame to initialize potential voxels
+        first_mask, first_frame = masks_and_frames[0]
+        rgb_frame = cv2.cvtColor(first_frame, cv2.COLOR_BGR2RGB)
+        
+        # Create a dictionary to store potential voxels and their colors
+        voxel_dict = {}
+        
+        # Process first frame completely to initialize all potential voxels
+        foreground_pixels = []
+        for x in range(first_mask.shape[0]):
+            for y in range(first_mask.shape[1]):
+                if first_mask[x][y] > 0:
+                    foreground_pixels.append((y, x))
+        
+        foreground_pixels = np.array(foreground_pixels).squeeze()
+        if foreground_pixels.size == 0:
+            return voxel_space
+            
+        # Handle case where only one pixel is in foreground_pixels
+        if len(foreground_pixels.shape) == 1:
+            foreground_pixels = np.array([foreground_pixels])
+            
+        print(f"Processing {len(foreground_pixels)} pixels from first frame")
+        
+        # Use thread-based concurrency for sharing lookup table (which is already in memory)
+        # This avoids pickle issues with self.lookup_table in multiprocessing
+        voxel_list = []
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            # Calculate adaptive batch size using square root rule
+            total_pixels = len(foreground_pixels)
+            cpu_count = os.cpu_count() or 4
+            base_size = int(np.sqrt(total_pixels))
+            adaptive_batch_size = max(100, base_size // cpu_count)
+            
+            print(f"Using adaptive batch size of {adaptive_batch_size} for {total_pixels} pixels on {cpu_count} cores")
+            
+            # Create batches with adaptive size
+            batches = [foreground_pixels[i:i + adaptive_batch_size] for i in range(0, total_pixels, adaptive_batch_size)]
+            
+            # Submit all batches to executor - passing camera_id and rgb_frame once
+            futures = []
+            for batch in batches:
+                futures.append(executor.submit(self._process_pixel_batch, camera_id, rgb_frame, batch))
+            
+            # Collect results as they complete
+            for future in tqdm(concurrent.futures.as_completed(futures), 
+                              total=len(futures),
+                              desc=f"Initializing voxels for camera {camera_id}"):
+                try:
+                    results = future.result()
+                    voxel_list.extend(results)
+                except Exception as exc:
+                    print(f'Batch processing exception: {exc}')
+        
+        # Process results
+        for voxel, color in voxel_list:
+            voxel_dict[voxel] = color
+            temp_voxel_space[voxel] = 1
+        
+        # Keep track of previous mask for XOR operation
+        prev_mask = first_mask.copy()
+        
+        # For each subsequent frame - process sequentially as each depends on previous
+        for i, (mask, frame) in enumerate(tqdm(masks_and_frames[1:], desc=f"Processing frames for camera {camera_id}")):
+            # Use XOR to find pixels that changed between frames
+            diff_mask = cv2.bitwise_xor(mask, prev_mask)
+            
+            # Update previous mask for next iteration
+            prev_mask = mask.copy()
+            
+            # Create a new temporary voxel space for this frame
+            current_frame_voxels = temp_voxel_space.copy()
+            
+            # Process only pixels that changed (using XOR)
+            changed_pixels = []
+            for x in range(diff_mask.shape[0]):
+                for y in range(diff_mask.shape[1]):
+                    if diff_mask[x][y] > 0:  # This pixel changed
+                        changed_pixels.append((y, x))
+            
+            changed_pixels = np.array(changed_pixels).squeeze()
+            if changed_pixels.size > 0:
+                # Handle case where only one pixel changed
+                if len(changed_pixels.shape) == 1:
+                    changed_pixels = np.array([changed_pixels])
+                                    
+                # For each changed pixel
+                for points in changed_pixels:
+                    try:
+                        point_voxels = self.lookup_table[camera_id - 1, int(points[0]), int(points[1])]
+                    except:
+                        continue
+                    if point_voxels is None:
+                        continue
+            
+                    # Check if this pixel is now foreground or background
+                    is_foreground = mask[int(points[1]), int(points[0])] > 0
+                    
+                    for voxel in point_voxels:
+                                if not is_foreground:
+                                    # If pixel became background, remove corresponding voxels
+                                    current_frame_voxels[voxel] = 0
+            
+            # Update the temporary voxel space with the current frame's voxels
+            temp_voxel_space = current_frame_voxels
+            
+            # If no voxels remain consistent, break early
+            if np.sum(temp_voxel_space) == 0:
+                print(f"No consistent voxels remain after frame {i+1}")
+                break
+        
+        # Transfer consistent voxels to final voxel space with color information
+        consistent_voxel_count = 0
+        voxel_items = list(voxel_dict.items())
+        
+        # Using ThreadPoolExecutor for final voxel space construction
+        # This phase has few dependencies and operates on pre-existing data
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            # Calculate adaptive batch size using square root rule
+            total_voxels = len(voxel_items)
+            cpu_count = os.cpu_count() or 4
+            base_size = int(np.sqrt(total_voxels))
+            adaptive_batch_size = max(100, base_size // cpu_count)
+            
+            print(f"Using adaptive batch size of {adaptive_batch_size} for {total_voxels} voxels on {cpu_count} cores")
+            
+            # Create batches with adaptive size
+            batches = [voxel_items[i:i + adaptive_batch_size] for i in range(0, total_voxels, adaptive_batch_size)]
+            
+            # Submit batches for processing - now with simplified parameters
+            futures = []
+            for batch in batches:
+                futures.append(executor.submit(self._update_voxel_batch, batch, temp_voxel_space))
+            
+            # Process results as they complete
+            for future in tqdm(concurrent.futures.as_completed(futures), 
+                              total=len(futures),
+                              desc=f"Finalizing voxel space for camera {camera_id}"):
+                try:
+                    local_space, count = future.result()
+                    # Combine local space into the final voxel space
+                    # For each non-zero voxel in local_space, copy its values to voxel_space
+                    non_zero_indices = np.where(local_space[..., 0] > 0)
+                    for idx in range(len(non_zero_indices[0])):
+                        x, y, z = non_zero_indices[0][idx], non_zero_indices[1][idx], non_zero_indices[2][idx]
+                        voxel_space[x, y, z] = local_space[x, y, z]
+                    
+                    consistent_voxel_count += count
+                except Exception as exc:
+                    print(f'Voxel space update exception: {exc}')
+        
+        print(f'Voxel space for camera {camera_id} has {consistent_voxel_count} consistent voxels out of {self.width * self.height * self.depth} possible voxels')
+        return voxel_space
+
+    def reconstruct(self):
+        """
+        Performs the voxel reconstruction process using all camera angles.
+        """
+        self.voxel_space = np.zeros((self.width, self.height, self.depth, 4), dtype=np.uint8)
+        
+        for camera in self.cameras:
+            camera_id = camera['id']
+            background_model = BackgroundSubtractor(f'./data/cam{camera_id}/video.avi', f'./data/cam{camera_id}/background.avi')
+            masks_and_frames = background_model.isolate_foreground()
+            voxel_space = self.reconstruct_voxels(masks_and_frames, camera_id)
+            self.voxel_space += voxel_space
+            
+        return self.voxel_space
+
+
+    

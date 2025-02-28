@@ -26,7 +26,7 @@ class BackgroundSubtractor:
         self.background_model = gmm
 
     # 50, 10, 25
-    def __background_subtraction(self, frame, h_threshold=10, s_threshold=40, v_threshold=60):
+    def __background_subtraction(self, frame, h_threshold=50, s_threshold=10, v_threshold=25):
         gmm_mask = self.background_model.apply(frame, learningRate=0.0001)
         
         # remove shadows
@@ -121,7 +121,7 @@ class BackgroundSubtractor:
 
         cap.release()
         cv2.destroyAllWindows()
-        return masks_and_frames[5]
+        return masks_and_frames
 
 
 if __name__ == "__main__":

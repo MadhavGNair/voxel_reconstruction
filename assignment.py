@@ -19,27 +19,24 @@ def generate_grid(width, depth):
 
 def set_voxel_positions(width, height, depth):
     # Generates voxel locations from reconstruction and adds grid edges
-    print(width, height, depth)
     vr = VoxelReconstructor(width, height, depth, (644, 486))
+    voxel_space = vr.reconstruct()
     data, colors = [], []
-    
     # Add voxels from reconstruction
     for x in range(width):
         for y in range(height):
             for z in range(depth):
-                if vr.voxel_space[x, y, z, 0] >= 4:  # If all 4 cameras see this voxel
+                if voxel_space[x, y, z, 0] >= 4:  # If all 4 cameras see this voxel
                     data.append([x*block_size - width/2, -(z*block_size - depth/2), y*block_size])
-                    camera_count = vr.voxel_space[x, y, z, 0]
-                    # r = vr.voxel_space[x, y, z, 1] / camera_count
-                    # g = vr.voxel_space[x, y, z, 2] / camera_count
-                    # b = vr.voxel_space[x, y, z, 3] / camera_count
+                    camera_count = voxel_space[x, y, z, 0]
+                    r = voxel_space[x, y, z, 1] / camera_count
+                    g = voxel_space[x, y, z, 2] / camera_count
+                    b = voxel_space[x, y, z, 3] / camera_count
                     
-                    # Normalize to [0,1] range for rendering
-                    # colors.append([r/255.0, g/255.0, b/255.0])
-                    # Create a gradient based on the voxel position
-                    r = x / width  # Red varies with x position
-                    g = y / height  # Green varies with y position
-                    b = z / depth   # Blue varies with z position
+                    # # Create a gradient based on the voxel position
+                    # r = x / width  # Red varies with x position
+                    # g = y / height  # Green varies with y position
+                    # b = z / depth   # Blue varies with z position
                     colors.append([r, g, b])
     
     return data, colors
@@ -70,7 +67,7 @@ def get_cam_positions():
         R, _ = cv2.Rodrigues(rvec)
         position = -np.matrix(R).T * np.matrix(tvec).T * scale
         # OpenGL uses Y-up, but the camera uses Z-up, so we need to flip the Y-axis
-        cam_positions.append([position[0], position[2], position[1]])
+        cam_positions.append([position[0], -position[2], position[1]])
 
     cam_colors = [[1.0, 0, 0], [0, 1.0, 0], [0, 0, 1.0], [1.0, 1.0, 0]]
     return cam_positions, cam_colors
