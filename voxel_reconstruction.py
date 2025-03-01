@@ -10,6 +10,7 @@ import numpy as np
 from tqdm import tqdm
 
 from background_subtraction import BackgroundSubtractor
+from marching_cubes import generate_mesh_from_voxels
 
 
 class VoxelReconstructor:
@@ -499,10 +500,24 @@ class VoxelReconstructor:
         )
         return voxel_space
 
-    def reconstruct(self):
+    def reconstruct(self, save=False):
         """
         Performs the voxel reconstruction process using all camera angles.
         """
+        if save:
+            if os.path.exists(
+                f"./voxel_space_{self.width}x{self.height}x{self.depth}.npz"
+            ):
+                print(
+                    f"Loading voxel space from {f'./voxel_space_{self.width}x{self.height}x{self.depth}.npz'}"
+                )
+                self.load_voxel_space()
+                return (
+                    self.voxel_space,
+                    self.visibility_map,
+                    self.color_map,
+                    self.depth_map,
+                )
         if (
             self.voxel_space is None
             or self.visibility_map is None
@@ -547,5 +562,37 @@ class VoxelReconstructor:
                                 self.voxel_space[x, y, z, 1:] += voxel_space[
                                     x, y, z, 1:
                                 ]
-
+        if save:
+            np.savez(
+                f"./voxel_space_{self.width}x{self.height}x{self.depth}.npz",
+                voxel_space=self.voxel_space,
+                visibility_map=self.visibility_map,
+                color_map=self.color_map,
+                depth_map=self.depth_map,
+            )
         return self.voxel_space, self.visibility_map, self.color_map, self.depth_map
+
+    def load_voxel_space(self):
+        voxel_space = np.load(
+            f"./voxel_space_{self.width}x{self.height}x{self.depth}.npz"
+        )
+        self.voxel_space = voxel_space["voxel_space"]
+        self.visibility_map = voxel_space["visibility_map"]
+        self.color_map = voxel_space["color_map"]
+        self.depth_map = voxel_space["depth_map"]
+        return self.voxel_space, self.visibility_map, self.color_map, self.depth_map
+
+    def generate_mesh(self, threshold=4, step_size=1, visualize=True):
+        # generate mesh using marching cubes
+        print(
+            f"Generating mesh with threshold {threshold} and step size {step_size}..."
+        )
+        return generate_mesh_from_voxels(
+            self.voxel_space,
+            self.width,
+            self.height,
+            self.depth,
+            threshold=threshold,
+            step_size=step_size,
+            visualize=visualize,
+        )

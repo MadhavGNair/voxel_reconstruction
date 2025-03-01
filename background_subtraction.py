@@ -28,7 +28,6 @@ class BackgroundSubtractor:
 
         self.background_model = gmm
 
-    # 50, 10, 25
     def __background_subtraction(
         self, frame, h_threshold=50, s_threshold=10, v_threshold=25
     ):
@@ -63,8 +62,6 @@ class BackgroundSubtractor:
         kernel = np.ones((2, 2), np.uint8)
         combined_mask = cv2.erode(combined_mask, kernel, iterations=1)
         combined_mask = cv2.dilate(combined_mask, kernel, iterations=1)
-
-        # combined_mask = cv2.medianBlur(combined_mask, 5)
 
         internal_contours, _ = cv2.findContours(
             combined_mask, cv2.RETR_CCOMP, cv2.CHAIN_APPROX_SIMPLE
@@ -117,7 +114,6 @@ class BackgroundSubtractor:
 
         masks_and_frames = []
 
-        # Process all frames in the video
         while True:
             ret, frame = cap.read()
             if not ret:
