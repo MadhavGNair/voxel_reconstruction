@@ -1,4 +1,18 @@
 /orane
+*.mp4
+*.avi
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.bmp
+*.docx
+*.doc
+*.pdf
+*.pptx
+*.ppt
+*.xls
+*.xlsx
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

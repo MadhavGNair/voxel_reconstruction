@@ -18,49 +18,49 @@ def generate_grid(width, depth):
     return data, colors
 
 def set_voxel_positions(width, height, depth):
-    # Generates voxel locations from reconstruction and adds grid edges
+    # generates voxel locations from reconstruction and adds grid edges
     vr = VoxelReconstructor(width, height, depth, (644, 486))
-    voxel_space = vr.reconstruct()
+    voxel_space, visibility_map, color_map, depth_map = vr.reconstruct()
     data, colors = [], []
-    # Add voxels from reconstruction
+    # add voxels from reconstruction
     for x in range(width):
         for y in range(height):
             for z in range(depth):
-                if voxel_space[x, y, z, 0] >= 4:  # If all 4 cameras see this voxel
+                if voxel_space[x, y, z, 0] >= 4:
                     data.append([x*block_size - width/2, -(z*block_size - depth/2), y*block_size])
                     
-                    # Get color information with visibility weighting
+                    # get color information with visibility weighting
                     visible_cameras = 0
                     weighted_color = np.zeros(3, dtype=np.float32)
                     
-                    # Calculate weights based on visibility and distance
+                    # calculate weights based on visibility and distance
                     total_weight = 0
                     for cam_id in range(4):
-                        if vr.visibility_map[cam_id, x, y, z]:
-                            # This camera has clear visibility to this voxel
+                        if visibility_map[cam_id, x, y, z]:
+                            # this camera has clear visibility to this voxel
                             visible_cameras += 1
                             
-                            # Use inverse distance as weight (closer cameras have more influence)
-                            distance = vr.depth_map[cam_id, x, y, z]
+                            # use inverse distance as weight (closer cameras have more influence)
+                            distance = depth_map[cam_id, x, y, z]
                             if distance > 0:
                                 weight = 1.0 / distance
                             else:
                                 weight = 1.0
                                 
-                            # Get color from this camera's view
-                            cam_color = vr.color_map[cam_id, x, y, z].astype(np.float32) / 255.0
+                            # get color from this camera's view
+                            cam_color = color_map[cam_id, x, y, z].astype(np.float32) / 255.0
                             
-                            # Add weighted contribution
+                            # add weighted contribution
                             weighted_color += cam_color * weight
                             total_weight += weight
                     
-                    # If we have visible cameras, use weighted color
+                    # if we have visible cameras, use weighted color
                     if visible_cameras > 0 and total_weight > 0:
-                        # Normalize by total weight
+                        # normalize by total weight
                         final_color = weighted_color / total_weight
                         colors.append(final_color)
                     else:
-                        # Fallback to simple average if no visibility information
+                        # fallback to simple average if no visibility information
                         camera_count = voxel_space[x, y, z, 0]
                         r = voxel_space[x, y, z, 1] / camera_count / 255.0
                         g = voxel_space[x, y, z, 2] / camera_count / 255.0
