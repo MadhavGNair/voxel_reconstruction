@@ -3,9 +3,9 @@ import json
 import os
 
 import cv2
+import matplotlib.pyplot as plt
 import numpy as np
 from lxml import etree
-import matplotlib.pyplot as plt
 
 from camera_calibrator import CameraCalibrator
 
@@ -208,6 +208,7 @@ def draw_axes_and_cube(
         cv2.imwrite(save_path, img)
         print(f"Image with axes drawn saved to {save_path}")
 
+
 def extract_frames(video_path, output_folder, frame_interval):
     if not os.path.exists(output_folder):
         os.makedirs(output_folder)
@@ -292,6 +293,7 @@ def get_intrinsics_values():
             print(f"Testing camera: {camera_name}")
             calibrator = CameraCalibrator(image_path, (width, height), square_size)
             calibrator.draw_axes_and_cube(image_path, intrinsics_path, save=False)
+
 
 def get_extrinsics_values():
     extract_frame = False
