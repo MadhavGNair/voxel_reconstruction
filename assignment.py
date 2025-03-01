@@ -28,16 +28,44 @@ def set_voxel_positions(width, height, depth):
             for z in range(depth):
                 if voxel_space[x, y, z, 0] >= 4:  # If all 4 cameras see this voxel
                     data.append([x*block_size - width/2, -(z*block_size - depth/2), y*block_size])
-                    camera_count = voxel_space[x, y, z, 0]
-                    r = voxel_space[x, y, z, 1] / camera_count
-                    g = voxel_space[x, y, z, 2] / camera_count
-                    b = voxel_space[x, y, z, 3] / camera_count
                     
-                    # # Create a gradient based on the voxel position
-                    # r = x / width  # Red varies with x position
-                    # g = y / height  # Green varies with y position
-                    # b = z / depth   # Blue varies with z position
-                    colors.append([r, g, b])
+                    # Get color information with visibility weighting
+                    visible_cameras = 0
+                    weighted_color = np.zeros(3, dtype=np.float32)
+                    
+                    # Calculate weights based on visibility and distance
+                    total_weight = 0
+                    for cam_id in range(4):
+                        if vr.visibility_map[cam_id, x, y, z]:
+                            # This camera has clear visibility to this voxel
+                            visible_cameras += 1
+                            
+                            # Use inverse distance as weight (closer cameras have more influence)
+                            distance = vr.depth_map[cam_id, x, y, z]
+                            if distance > 0:
+                                weight = 1.0 / distance
+                            else:
+                                weight = 1.0
+                                
+                            # Get color from this camera's view
+                            cam_color = vr.color_map[cam_id, x, y, z].astype(np.float32) / 255.0
+                            
+                            # Add weighted contribution
+                            weighted_color += cam_color * weight
+                            total_weight += weight
+                    
+                    # If we have visible cameras, use weighted color
+                    if visible_cameras > 0 and total_weight > 0:
+                        # Normalize by total weight
+                        final_color = weighted_color / total_weight
+                        colors.append(final_color)
+                    else:
+                        # Fallback to simple average if no visibility information
+                        camera_count = voxel_space[x, y, z, 0]
+                        r = voxel_space[x, y, z, 1] / camera_count / 255.0
+                        g = voxel_space[x, y, z, 2] / camera_count / 255.0
+                        b = voxel_space[x, y, z, 3] / camera_count / 255.0
+                        colors.append([r, g, b])
     
     return data, colors
 
@@ -92,5 +120,4 @@ def get_cam_rotation_matrices():
         # rotate the camera 90 degrees around the Z-axis for correct viewing direction
         cam_rotations.append(glm.mat4(*flattened_matrix) * glm.rotate(np.pi/2, glm.vec3(0, 0, 1)))
     return cam_rotations
-
 

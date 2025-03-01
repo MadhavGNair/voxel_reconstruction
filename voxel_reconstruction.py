@@ -13,26 +13,41 @@ class VoxelReconstructor:
     def __init__(self, width, height, depth, frame_dim) -> None:
         self.frame_dim = frame_dim
         self.lookup_table = np.empty((4, frame_dim[0], frame_dim[1]), dtype=object)
+        # Store camera positions for depth reasoning
+        self.camera_positions = []
 
+        self.num_cameras = 4
         self.cameras = self._load_cameras()
         self.width, self.height, self.depth = width, height, depth
         self.scale = 25
         self.lookup_table_path = f"./lookup_table_{self.width}x{self.height}x{self.depth}_{self.scale}.pkl"
         self._load_lookup_table()
         self.voxel_space = np.zeros((self.width, self.height, self.depth, 4), dtype=np.uint8)
+        # Store depth information for each voxel from each camera
+        self.depth_map = np.zeros((self.num_cameras, self.width, self.height, self.depth), dtype=np.float32)
+        # Store visibility information for each voxel from each camera
+        self.visibility_map = np.zeros((self.num_cameras, self.width, self.height, self.depth), dtype=np.bool_)
+        # Store color information for each voxel from each camera
+        self.color_map = np.zeros((self.num_cameras, self.width, self.height, self.depth, 3), dtype=np.uint8)
 
     def _load_cameras(self):
         """Load camera parameters for all cameras."""
         cameras = []
-        for i in range(1, 5):  # Assuming 4 cameras
+        for i in range(1, self.num_cameras + 1):  # Assuming 4 cameras
             camera_data_path = f"./data/cam{i}/config.xml"
             camera_matrix, dist_coeffs, rvec, tvec = self._load_camera_parameters(camera_data_path)
+            # Calculate camera position in world coordinates
+            R, _ = cv2.Rodrigues(rvec)
+            position = -np.matrix(R).T * np.matrix(tvec).T
+            self.camera_positions.append(position.flatten())
+            
             cameras.append({
                 'id': i,
                 'CameraMatrix': camera_matrix,
                 'DistortionCoefficients': dist_coeffs,
                 'RotationVectors': rvec,
-                'TranslationVectors': tvec
+                'TranslationVectors': tvec,
+                'Position': position.flatten()
             })
         return cameras
     
@@ -86,11 +101,15 @@ class VoxelReconstructor:
                         projected[1] < 0 or projected[1] >= self.frame_dim[1]):
                         continue
                     
-                    # Store in local dictionary
+                    # Calculate distance from camera to voxel for depth ordering
+                    camera_pos = self.cameras[camera_id-1]['Position']
+                    distance = np.linalg.norm(voxel - camera_pos)
+                    
+                    # Store in local dictionary with depth information
                     key = (projected[0], projected[1])
                     if key not in local_lookup:
-                        local_lookup[key] = set()
-                    local_lookup[key].add((x, y, z))
+                        local_lookup[key] = []
+                    local_lookup[key].append((x, y, z, distance))
         
         return camera_id, local_lookup
 
@@ -102,7 +121,7 @@ class VoxelReconstructor:
         print(f"Creating lookup table with ProcessPoolExecutor for dimensions {self.width}x{self.height}x{self.depth} with scale {self.scale}")
         
         # Initialize lookup table
-        self.lookup_table = np.empty((4, self.frame_dim[0], self.frame_dim[1]), dtype=object)
+        self.lookup_table = np.empty((self.num_cameras, self.frame_dim[0], self.frame_dim[1]), dtype=object)
         
         # Measure execution time
         start_time = time.time()
@@ -133,10 +152,12 @@ class VoxelReconstructor:
                     camera_id, local_lookup = future.result()
                     
                     # Transfer local lookup to the main lookup table
-                    for (px, py), voxel_set in local_lookup.items():
-                        if self.lookup_table[camera_id - 1, px, py] is None:
-                            self.lookup_table[camera_id - 1, px, py] = set()
-                        self.lookup_table[camera_id - 1, px, py].update(voxel_set)
+                    for (px, py), voxel_list in local_lookup.items():
+                        # Sort voxels by distance from camera (closest first)
+                        voxel_list.sort(key=lambda v: v[3])
+                        
+                        # Store sorted voxels in lookup table
+                        self.lookup_table[camera_id - 1, px, py] = voxel_list
                         
                 except Exception as exc:
                     print(f'Camera processing exception: {exc}')
@@ -152,11 +173,8 @@ class VoxelReconstructor:
             pickle.dump(self.lookup_table, file)
         return
 
-    def _point_in_bounds(self, point):
-        return not (point[0] < 0 or point[0] >= self.frame_dim[0] or point[1] < 0 or point[1] >= self.frame_dim[1])
-
     def _process_pixel_batch(self, camera_id, rgb_frame, batch_pixels):
-        """Process a batch of pixels in parallel"""
+        """Process a batch of pixels in parallel with depth reasoning"""
         batch_results = []
         
         for point in batch_pixels:
@@ -164,19 +182,28 @@ class VoxelReconstructor:
                 point_voxels = self.lookup_table[camera_id - 1, int(point[0]), int(point[1])]
                 if point_voxels is not None:
                     color = rgb_frame[int(point[1]), int(point[0])]
-                    for voxel in point_voxels:
-                        batch_results.append((voxel, color))
+                    
+                    # Get the closest voxel to the camera (first in sorted list)
+                    if len(point_voxels) > 0:
+                        closest_voxel = point_voxels[0]
+                        x, y, z, distance = closest_voxel
+                        batch_results.append(((x, y, z), color, distance))
+                        
+                        # Mark other voxels along this ray as occluded
+                        for voxel_info in point_voxels[1:]:
+                            x, y, z, _ = voxel_info
+                            batch_results.append(((x, y, z), color, float('inf')))  # Infinite distance means occluded
             except:
                 continue
                 
         return batch_results
 
     def _update_voxel_batch(self, voxel_batch, temp_voxel_space):
-        """Process a batch of voxels for final voxel space construction"""
+        """Process a batch of voxels for final voxel space construction with visibility information"""
         local_voxel_space = np.zeros((self.width, self.height, self.depth, 4), dtype=np.uint8)
         count = 0
         
-        for voxel, color in voxel_batch:
+        for voxel, color, distance in voxel_batch:
             x, y, z = voxel
             if temp_voxel_space[x, y, z] > 0:
                 local_voxel_space[x, y, z, 0] = 1  # Mark as occupied
@@ -199,6 +226,8 @@ class VoxelReconstructor:
         
         # Create a dictionary to store potential voxels and their colors
         voxel_dict = {}
+        # Store visibility information
+        voxel_visibility = {}
         
         # Process first frame completely to initialize all potential voxels
         foreground_pixels = []
@@ -247,10 +276,21 @@ class VoxelReconstructor:
                 except Exception as exc:
                     print(f'Batch processing exception: {exc}')
         
-        # Process results
-        for voxel, color in voxel_list:
+        # Process results with visibility information
+        for voxel, color, distance in voxel_list:
+            # Store color information
             voxel_dict[voxel] = color
             temp_voxel_space[voxel] = 1
+            
+            # Store visibility information (distance < inf means visible)
+            is_visible = distance < float('inf')
+            voxel_visibility[voxel] = is_visible
+            
+            # Update color map and visibility map
+            if is_visible:
+                self.color_map[camera_id-1, voxel[0], voxel[1], voxel[2]] = color
+                self.visibility_map[camera_id-1, voxel[0], voxel[1], voxel[2]] = True
+                self.depth_map[camera_id-1, voxel[0], voxel[1], voxel[2]] = distance
         
         # Keep track of previous mask for XOR operation
         prev_mask = first_mask.copy()
@@ -291,10 +331,16 @@ class VoxelReconstructor:
                     # Check if this pixel is now foreground or background
                     is_foreground = mask[int(points[1]), int(points[0])] > 0
                     
-                    for voxel in point_voxels:
-                                if not is_foreground:
-                                    # If pixel became background, remove corresponding voxels
-                                    current_frame_voxels[voxel] = 0
+                    for voxel_info in point_voxels:
+                        x, y, z, _ = voxel_info
+                        voxel = (x, y, z)
+                        if not is_foreground:
+                            # If pixel became background, remove corresponding voxels
+                            current_frame_voxels[voxel] = 0
+                            # Also update visibility
+                            if voxel in voxel_visibility:
+                                voxel_visibility[voxel] = False
+                                self.visibility_map[camera_id-1, x, y, z] = False
             
             # Update the temporary voxel space with the current frame's voxels
             temp_voxel_space = current_frame_voxels
@@ -325,7 +371,9 @@ class VoxelReconstructor:
             # Submit batches for processing - now with simplified parameters
             futures = []
             for batch in batches:
-                futures.append(executor.submit(self._update_voxel_batch, batch, temp_voxel_space))
+                # Convert batch to include visibility information
+                batch_with_visibility = [(voxel, color, 0) for voxel, color in batch]
+                futures.append(executor.submit(self._update_voxel_batch, batch_with_visibility, temp_voxel_space))
             
             # Process results as they complete
             for future in tqdm(concurrent.futures.as_completed(futures), 
@@ -338,7 +386,11 @@ class VoxelReconstructor:
                     non_zero_indices = np.where(local_space[..., 0] > 0)
                     for idx in range(len(non_zero_indices[0])):
                         x, y, z = non_zero_indices[0][idx], non_zero_indices[1][idx], non_zero_indices[2][idx]
-                        voxel_space[x, y, z] = local_space[x, y, z]
+                        voxel_space[x, y, z, 0] = 1  # Mark as seen by this camera
+                        
+                        # Only set color if this voxel is visible from this camera
+                        if self.visibility_map[camera_id-1, x, y, z]:
+                            voxel_space[x, y, z, 1:] = local_space[x, y, z, 1:]
                     
                     consistent_voxel_count += count
                 except Exception as exc:
@@ -353,13 +405,29 @@ class VoxelReconstructor:
         """
         self.voxel_space = np.zeros((self.width, self.height, self.depth, 4), dtype=np.uint8)
         
+        # Initialize visibility and color maps
+        self.visibility_map = np.zeros((self.num_cameras, self.width, self.height, self.depth), dtype=np.bool_)
+        self.color_map = np.zeros((self.num_cameras, self.width, self.height, self.depth, 3), dtype=np.uint8)
+        self.depth_map = np.full((self.num_cameras, self.width, self.height, self.depth), float('inf'), dtype=np.float32)
+        
+        # Process each camera
         for camera in self.cameras:
             camera_id = camera['id']
             background_model = BackgroundSubtractor(f'./data/cam{camera_id}/video.avi', f'./data/cam{camera_id}/background.avi')
             masks_and_frames = background_model.isolate_foreground()
             voxel_space = self.reconstruct_voxels(masks_and_frames, camera_id)
-            self.voxel_space += voxel_space
             
+            # Add camera's contribution to voxel space
+            for x in range(self.width):
+                for y in range(self.height):
+                    for z in range(self.depth):
+                        if voxel_space[x, y, z, 0] > 0:
+                            self.voxel_space[x, y, z, 0] += 1
+                            
+                            # Only update color if this camera has visibility
+                            if self.visibility_map[camera_id-1, x, y, z]:
+                                self.voxel_space[x, y, z, 1:] += voxel_space[x, y, z, 1:]
+        
         return self.voxel_space
 
 
