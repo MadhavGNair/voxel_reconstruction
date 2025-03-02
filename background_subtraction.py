@@ -143,12 +143,12 @@ if __name__ == "__main__":
         print(f"Processed {len(masks_and_frames)} frames for camera {i}")
 
         # # display the mask and frame
-        # cv2.imshow('Mask', masks_and_frames[0])
+        # cv2.imshow('Mask', masks_and_frames[0][0])
         # # Create a copy of the frame to draw on
-        # frame_with_mask = masks_and_frames[1].copy()
+        # frame_with_mask = masks_and_frames[0][1].copy()
 
         # # Draw the foreground (white pixels in mask) in red on the frame
-        # frame_with_mask[masks_and_frames[0] > 0] = [0, 0, 255]  # BGR format: red is [0,0,255]
+        # frame_with_mask[masks_and_frames[0][0] > 0] = [255, 0, 0]  # BGR format: red is [0,0,255]
 
         # cv2.imshow('Frame with Foreground', frame_with_mask)
         # cv2.waitKey(0)

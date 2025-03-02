@@ -29,19 +29,22 @@ def set_voxel_positions(width, height, depth):
     vr = VoxelReconstructor(width, height, depth, (644, 486))
     voxel_space, visibility_map, color_map, depth_map = vr.reconstruct(save=True)
     data, colors = [], []
-    # add voxels from reconstruction
+    
+    # First pass: collect voxels and their colors with visibility information
+    voxel_positions = []
+    voxel_colors = []
+    voxels_without_visibility = []
+    
     for x in range(width):
         for y in range(height):
             for z in range(depth):
                 if voxel_space[x, y, z, 0] >= 4:
-                    data.append(
-                        [
-                            x * block_size - width / 2,
-                            -(z * block_size - depth / 2),
-                            y * block_size,
-                        ]
-                    )
-
+                    position = [
+                        x * block_size - width / 2,
+                        -(z * block_size - depth / 2),
+                        y * block_size,
+                    ]
+                    
                     # get color information with visibility weighting
                     visible_cameras = 0
                     weighted_color = np.zeros(3, dtype=np.float32)
@@ -69,18 +72,73 @@ def set_voxel_positions(width, height, depth):
                             weighted_color += cam_color * weight
                             total_weight += weight
 
+                    # store voxel position and index
+                    voxel_positions.append((x, y, z))
+                    
                     # if we have visible cameras, use weighted color
                     if visible_cameras > 0 and total_weight > 0:
                         # normalize by total weight
                         final_color = weighted_color / total_weight
-                        colors.append(final_color)
+                        voxel_colors.append(final_color)
                     else:
-                        # fallback to simple average if no visibility information
+                        # mark this voxel for second pass coloring
+                        voxels_without_visibility.append(len(voxel_positions) - 1)
+                        # set temporary colors
                         camera_count = voxel_space[x, y, z, 0]
                         r = voxel_space[x, y, z, 1] / camera_count / 255.0
                         g = voxel_space[x, y, z, 2] / camera_count / 255.0
                         b = voxel_space[x, y, z, 3] / camera_count / 255.0
-                        colors.append([r, g, b])
+                        voxel_colors.append([r, g, b])
+    
+    # second pass: color voxels without visibility based on neighbors
+    for idx in voxels_without_visibility:
+        x, y, z = voxel_positions[idx]
+        
+        # find neighboring voxels with visibility information
+        neighbor_colors = []
+        neighbor_weights = []
+        
+        # check 26 neighbors (3x3x3 cube centered at current voxel)
+        for dx in range(-1, 2):
+            for dy in range(-1, 2):
+                for dz in range(-1, 2):
+                    # skip the center voxel
+                    if dx == 0 and dy == 0 and dz == 0:
+                        continue
+                    
+                    nx, ny, nz = x + dx, y + dy, z + dz
+                    
+                    # check if neighbor is within bounds
+                    if 0 <= nx < width and 0 <= ny < height and 0 <= nz < depth:
+                        # find this neighbor in our voxel positions list
+                        neighbor_idx = voxel_positions.index((nx, ny, nz))
+                        # only use neighbors that aren't in the voxels_without_visibility list
+                        if neighbor_idx not in voxels_without_visibility:
+                            # weight by inverse distance
+                            distance = np.sqrt(dx**2 + dy**2 + dz**2)
+                            weight = 1.0 / distance
+                            neighbor_colors.append(voxel_colors[neighbor_idx])
+                            neighbor_weights.append(weight)
+        
+        # if we found neighbors with visibility information, use weighted average
+        if neighbor_colors:
+            total_weight = sum(neighbor_weights)
+            weighted_color = np.zeros(3, dtype=np.float32)
+            
+            for color, weight in zip(neighbor_colors, neighbor_weights):
+                weighted_color += np.array(color) * weight
+            
+            # update the color
+            voxel_colors[idx] = weighted_color / total_weight
+    
+    # add all voxels to the data and colors lists
+    for i, (x, y, z) in enumerate(voxel_positions):
+        data.append([
+            x * block_size - width / 2,
+            -(z * block_size - depth / 2),
+            y * block_size,
+        ])
+        colors.append(voxel_colors[i])
 
     if visualize_mesh:
         vr.generate_mesh()
