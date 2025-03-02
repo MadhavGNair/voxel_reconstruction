@@ -28,36 +28,33 @@ class MarchingCubesMeshGenerator:
                         camera_count = self.occupancy[x, y, z]
                         self.colors[x, y, z, 0] = (
                             voxel_space[x, y, z, 1] / camera_count / 255.0
-                        )  # R
+                        )
                         self.colors[x, y, z, 1] = (
                             voxel_space[x, y, z, 2] / camera_count / 255.0
-                        )  # G
+                        )
                         self.colors[x, y, z, 2] = (
                             voxel_space[x, y, z, 3] / camera_count / 255.0
-                        )  # B
+                        )
 
     def generate_mesh(self, threshold=4, step_size=1):
-        # apply threshold to occupancy data
-        volume = self.occupancy.copy()
+        visibility_map = self.occupancy.copy()
 
-        # threshold the volume to create a binary volume
+        # threshold the visibility_map to create a binary visibility_map
         # voxels seen by at least 'threshold' cameras are considered solid
-        volume = (volume >= threshold).astype(np.float32)
+        visibility_map = (visibility_map >= threshold).astype(np.float32)
 
         # apply marching cubes to get the mesh
         try:
             verts, faces, normals, values = measure.marching_cubes(
-                volume[::step_size, ::step_size, ::step_size],
+                visibility_map[::step_size, ::step_size, ::step_size],
                 level=0.5,  # threshold for isosurface
             )
 
             # scale vertices to match the original voxel space dimensions
             verts = verts * step_size
-
-            # apply block size scaling
             verts = verts * self.block_size
 
-            # center the model (optional)
+            # center the model
             verts[:, 0] -= (self.width * self.block_size) / 2
             verts[:, 2] -= (self.depth * self.block_size) / 2
 
@@ -66,7 +63,7 @@ class MarchingCubesMeshGenerator:
             print(f"Error generating mesh: {e}")
             return None, None, None, None
 
-    def visualize_mesh(self, verts, faces, save_path=None):
+    def visualize_mesh(self, verts, faces):
         if verts is None or faces is None:
             print("No mesh to visualize")
             return
@@ -104,18 +101,12 @@ class MarchingCubesMeshGenerator:
         ax.set_zlabel("Z")
 
         plt.tight_layout()
-
-        if save_path:
-            plt.savefig(save_path)
-            print(f"Visualization saved to {save_path}")
-
         plt.show()
 
 
 def generate_mesh_from_voxels(
     voxel_space, width, height, depth, threshold=3.5, step_size=1, visualize=True
 ):
-    # create mesh generator
     mesh_generator = MarchingCubesMeshGenerator(voxel_space, width, height, depth)
 
     # generate mesh

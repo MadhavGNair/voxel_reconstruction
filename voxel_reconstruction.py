@@ -438,7 +438,6 @@ class VoxelReconstructor:
         voxel_items = list(voxel_dict.items())
 
         # using ThreadPoolExecutor for final voxel space construction
-        # this phase has few dependencies and operates on pre-existing data
         with concurrent.futures.ThreadPoolExecutor() as executor:
             # calculate adaptive batch size using square root rule
             total_voxels = len(voxel_items)

@@ -26,11 +26,11 @@ def generate_grid(width, depth):
 def set_voxel_positions(width, height, depth):
     visualize_mesh = False
     # generates voxel locations from reconstruction and adds grid edges
-    vr = VoxelReconstructor(width, height, depth, (644, 486))
-    voxel_space, visibility_map, color_map, depth_map = vr.reconstruct(save=True)
+    reconstructor = VoxelReconstructor(width, height, depth, (644, 486))
+    voxel_space, visibility_map, color_map, depth_map = reconstructor.reconstruct(save=True)
     data, colors = [], []
 
-    # First pass: collect voxels and their colors with visibility information
+    # first pass: collect voxels and their colors with visibility information
     voxel_positions = []
     voxel_colors = []
     voxels_without_visibility = []
@@ -143,7 +143,7 @@ def set_voxel_positions(width, height, depth):
         colors.append(voxel_colors[i])
 
     if visualize_mesh:
-        vr.generate_mesh()
+        reconstructor.generate_mesh()
 
     return data, colors
 

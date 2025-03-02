@@ -11,6 +11,9 @@ class BackgroundSubtractor:
         self.background_model = None
 
     def __create_background_model(self, var_threshold=64):
+        """
+        Create a background model using the background video.
+        """
         cap = cv2.VideoCapture(self.background_path)
 
         gmm = cv2.createBackgroundSubtractorMOG2(
@@ -31,6 +34,9 @@ class BackgroundSubtractor:
     def __background_subtraction(
         self, frame, h_threshold=50, s_threshold=10, v_threshold=25
     ):
+        """
+        Subtract the background from the frame.
+        """
         gmm_mask = self.background_model.apply(frame, learningRate=0.0001)
 
         # remove shadows
@@ -105,7 +111,10 @@ class BackgroundSubtractor:
 
         return combined_mask, frame
 
-    def isolate_foreground(self, output_folder="./output", display_frames=False):
+    def isolate_foreground(self, display_frames=False):
+        """
+        Isolate the foreground from the video.
+        """
         self.__create_background_model()
 
         cap = cv2.VideoCapture(self.video_path)
@@ -142,7 +151,7 @@ if __name__ == "__main__":
         masks_and_frames = background_subtractor.isolate_foreground(display_frames=True)
         print(f"Processed {len(masks_and_frames)} frames for camera {i}")
 
-        # # display the mask and frame
+        # # display the mask and frame with mask
         # cv2.imshow('Mask', masks_and_frames[0][0])
         # # Create a copy of the frame to draw on
         # frame_with_mask = masks_and_frames[0][1].copy()
