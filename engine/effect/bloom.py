@@ -1,4 +1,5 @@
 from OpenGL.GL import *
+
 from engine.renderable.quad import Quad
 
 
@@ -20,14 +21,16 @@ class Bloom:
             else:
                 horizontal_val, nhorizontal_val = 0, 1
 
-            self.blurProgram.setInt('horizontal', horizontal)
+            self.blurProgram.setInt("horizontal", horizontal)
             glBindFramebuffer(GL_FRAMEBUFFER, self.blurbuffer.FBOs[horizontal_val])
             glActiveTexture(GL_TEXTURE0)
             if first_iteration:
                 glBindTexture(GL_TEXTURE_2D, self.hdrbuffer.colorBuffers[1])
                 first_iteration = False
             else:
-                glBindTexture(GL_TEXTURE_2D, self.blurbuffer.colorBuffers[nhorizontal_val])
+                glBindTexture(
+                    GL_TEXTURE_2D, self.blurbuffer.colorBuffers[nhorizontal_val]
+                )
                 first_iteration = False
 
             horizontal = not horizontal

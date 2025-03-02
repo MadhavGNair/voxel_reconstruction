@@ -1,17 +1,17 @@
 import numpy as np
-from OpenGL.GL import *
 from OpenGL.error import NullFunctionError
+from OpenGL.GL import *
 
 
 class Mesh:
     def __init__(self, data):
-        indices_list = self._get_indices_list(data['faces'])
+        indices_list = self._get_indices_list(data["faces"])
         self.__indicesLen = len(indices_list)
         indices_data = np.array(indices_list, dtype=np.uint32)
-        vertex_data = np.array(data['vertices'], dtype=np.float32)
-        normal_data = np.array(data['normals'], dtype=np.float32)
-        tex_coords_data = np.array(data['texturecoords'], dtype=np.float32)
-        tangent_data = np.array(data['tangents'], dtype=np.float32)
+        vertex_data = np.array(data["vertices"], dtype=np.float32)
+        normal_data = np.array(data["normals"], dtype=np.float32)
+        tex_coords_data = np.array(data["texturecoords"], dtype=np.float32)
+        tangent_data = np.array(data["tangents"], dtype=np.float32)
 
         self.VAO = glGenVertexArrays(1)
         glBindVertexArray(self.VAO)
@@ -78,7 +78,9 @@ class Mesh:
         return indices_list
 
     def set_multiple_positions(self, positions, colors):
-        assert len(positions) == len(colors), f'len(positions), {len(positions)}, must be equal to len(colors), {len(colors)}'
+        assert len(positions) == len(
+            colors
+        ), f"len(positions), {len(positions)}, must be equal to len(colors), {len(colors)}"
         data = np.array(positions, dtype=np.float32)
         glBindVertexArray(self.VAO)
         glBindBuffer(GL_ARRAY_BUFFER, self.VBO_POS)
@@ -99,7 +101,9 @@ class Mesh:
 
     def draw_multiple(self):
         glBindVertexArray(self.VAO)
-        glDrawElementsInstanced(GL_TRIANGLES, self.__indicesLen, GL_UNSIGNED_INT, None, self.positionsLen)
+        glDrawElementsInstanced(
+            GL_TRIANGLES, self.__indicesLen, GL_UNSIGNED_INT, None, self.positionsLen
+        )
 
     def __del__(self):
         self.delete()
@@ -114,6 +118,15 @@ class Mesh:
             glDeleteBuffers(1, self.EBO)
             glDeleteBuffers(1, self.VBO_POS)
             glDeleteBuffers(1, self.VBO_COL)
-            self.VAO, self.VBO, self.VBO_N, self.VBO_TEX, self.VBO_TAN, self.EBO, self.VBO_POS, self.VBO_COL = 0, 0, 0, 0, 0, 0, 0, 0
+            (
+                self.VAO,
+                self.VBO,
+                self.VBO_N,
+                self.VBO_TEX,
+                self.VBO_TAN,
+                self.EBO,
+                self.VBO_POS,
+                self.VBO_COL,
+            ) = (0, 0, 0, 0, 0, 0, 0, 0)
         except (NullFunctionError, TypeError):
-            pass 
+            pass

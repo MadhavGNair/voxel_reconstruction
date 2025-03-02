@@ -1,13 +1,14 @@
 import os
-from OpenGL.GL import *
+
 from OpenGL.error import NullFunctionError
+from OpenGL.GL import *
 
 
 class Shader:
     def __init__(self, sourcePath, shaderType):
         self.__shaderId = 0
         if not os.path.exists(sourcePath):
-            raise RuntimeError(f'Shader source file {sourcePath} does not exists.')
+            raise RuntimeError(f"Shader source file {sourcePath} does not exists.")
         self.__sourcePath = sourcePath
         self.shaderType = shaderType
 
@@ -17,7 +18,7 @@ class Shader:
         glCompileShader(self.__shaderId)
         if glGetShaderiv(self.__shaderId, GL_COMPILE_STATUS) != GL_TRUE:
             info = glGetShaderInfoLog(self.__shaderId)
-            raise RuntimeError(f'Shader compilation failed:\n{info}')
+            raise RuntimeError(f"Shader compilation failed:\n{info}")
 
     def __load_source(self):
         with open(self.__sourcePath) as file:

@@ -1,16 +1,35 @@
 import numpy as np
-from OpenGL.GL import *
 from OpenGL.error import NullFunctionError
+from OpenGL.GL import *
 
 
 class Quad:
     def __init__(self):
-        quad_vertices = np.array([
-            -1,  1, 0, 0, 1,
-            -1, -1, 0, 0, 0,
-            1,  1, 0, 1, 1,
-            1, -1, 0, 1, 0,
-        ], dtype=np.float32)
+        quad_vertices = np.array(
+            [
+                -1,
+                1,
+                0,
+                0,
+                1,
+                -1,
+                -1,
+                0,
+                0,
+                0,
+                1,
+                1,
+                0,
+                1,
+                1,
+                1,
+                -1,
+                0,
+                1,
+                0,
+            ],
+            dtype=np.float32,
+        )
 
         self.quadVAO = glGenVertexArrays(1)
         self.quadVBO = glGenBuffers(1)

@@ -1,5 +1,6 @@
 import glm
 from OpenGL.GL import *
+
 from engine.buffer.depthbuffer import DepthBuffer
 from engine.buffer.framebuffer import FrameBuffer
 
@@ -31,7 +32,7 @@ class Shadow:
     def cast_shadow(self, depth_program):
         glDisable(GL_CULL_FACE)
         depth_program.use()
-        depth_program.setMat4('lightSpaceMatrix', self.lightSpaceMatrix)
+        depth_program.setMat4("lightSpaceMatrix", self.lightSpaceMatrix)
         glViewport(0, 0, self.width, self.height)
         self.frame_buffer.bind()
         glClear(GL_DEPTH_BUFFER_BIT)
@@ -39,8 +40,8 @@ class Shadow:
     def end_cast_shadow(self, program):
         self.frame_buffer.unbind()
         program.use()
-        program.setMat4('lightSpaceMatrix', self.lightSpaceMatrix)
-        program.setInt('shadowMap', 10)
+        program.setMat4("lightSpaceMatrix", self.lightSpaceMatrix)
+        program.setInt("shadowMap", 10)
         glActiveTexture(GL_TEXTURE10)
         self.depth_buffer.bind()
         glEnable(GL_CULL_FACE)

@@ -1,5 +1,6 @@
-import glm
 import math
+
+import glm
 
 
 class Camera:

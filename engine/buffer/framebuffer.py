@@ -1,5 +1,5 @@
-from OpenGL.GL import *
 from OpenGL.error import NullFunctionError
+from OpenGL.GL import *
 
 
 class FrameBuffer:
@@ -8,7 +8,7 @@ class FrameBuffer:
 
     def check_complete(self):
         if glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE:
-            raise RuntimeError('Error when creating Framebuffer.')
+            raise RuntimeError("Error when creating Framebuffer.")
         self.unbind()
 
     def getId(self):

@@ -1,5 +1,6 @@
-from OpenGL.GL import *
 from OpenGL.error import NullFunctionError
+from OpenGL.GL import *
+
 from engine.buffer.framebuffer import FrameBuffer
 from engine.config import config
 
@@ -25,13 +26,33 @@ class HDRBuffer:
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE)
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR)
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR)
-            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB16F, self.width, self.height, 0, GL_RGB, GL_FLOAT, None)
-            glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0 + i, GL_TEXTURE_2D, self.colorBuffers[i], 0)
+            glTexImage2D(
+                GL_TEXTURE_2D,
+                0,
+                GL_RGB16F,
+                self.width,
+                self.height,
+                0,
+                GL_RGB,
+                GL_FLOAT,
+                None,
+            )
+            glFramebufferTexture2D(
+                GL_FRAMEBUFFER,
+                GL_COLOR_ATTACHMENT0 + i,
+                GL_TEXTURE_2D,
+                self.colorBuffers[i],
+                0,
+            )
 
         self.rboDepth = glGenRenderbuffers(1)
         glBindRenderbuffer(GL_RENDERBUFFER, self.rboDepth)
-        glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT, self.width, self.height)
-        glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, self.rboDepth)
+        glRenderbufferStorage(
+            GL_RENDERBUFFER, GL_DEPTH_COMPONENT, self.width, self.height
+        )
+        glFramebufferRenderbuffer(
+            GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, self.rboDepth
+        )
         glDrawBuffers(2, [GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1])
         self.hdrFBO.check_complete()
 
@@ -41,16 +62,34 @@ class HDRBuffer:
         self.__colorBuffersMS = glGenTextures(2)
         for i in range(2):
             glBindTexture(GL_TEXTURE_2D_MULTISAMPLE, self.__colorBuffersMS[i])
-            glTexImage2DMultisample(GL_TEXTURE_2D_MULTISAMPLE, config['sampling_level'], GL_RGB16F, self.width,
-                                    self.height, GL_TRUE)
-            glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0 + i, GL_TEXTURE_2D_MULTISAMPLE,
-                                   self.__colorBuffersMS[i], 0)
+            glTexImage2DMultisample(
+                GL_TEXTURE_2D_MULTISAMPLE,
+                config["sampling_level"],
+                GL_RGB16F,
+                self.width,
+                self.height,
+                GL_TRUE,
+            )
+            glFramebufferTexture2D(
+                GL_FRAMEBUFFER,
+                GL_COLOR_ATTACHMENT0 + i,
+                GL_TEXTURE_2D_MULTISAMPLE,
+                self.__colorBuffersMS[i],
+                0,
+            )
 
         self.__rboDepthMS = glGenRenderbuffers(1)
         glBindRenderbuffer(GL_RENDERBUFFER, self.__rboDepthMS)
-        glRenderbufferStorageMultisample(GL_RENDERBUFFER, config['sampling_level'], GL_DEPTH_COMPONENT, self.width,
-                                         self.height)
-        glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, self.__rboDepthMS)
+        glRenderbufferStorageMultisample(
+            GL_RENDERBUFFER,
+            config["sampling_level"],
+            GL_DEPTH_COMPONENT,
+            self.width,
+            self.height,
+        )
+        glFramebufferRenderbuffer(
+            GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, self.__rboDepthMS
+        )
         glDrawBuffers(2, [GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1])
         self.__hdrFBO_MS.check_complete()
 
@@ -63,8 +102,18 @@ class HDRBuffer:
         for i in range(2):
             glReadBuffer(GL_COLOR_ATTACHMENT0 + i)
             glDrawBuffer(GL_COLOR_ATTACHMENT0 + i)
-            glBlitFramebuffer(0, 0, self.width, self.height, 0, 0, self.width, self.height, GL_COLOR_BUFFER_BIT,
-                              GL_NEAREST)
+            glBlitFramebuffer(
+                0,
+                0,
+                self.width,
+                self.height,
+                0,
+                0,
+                self.width,
+                self.height,
+                GL_COLOR_BUFFER_BIT,
+                GL_NEAREST,
+            )
         glBindFramebuffer(GL_READ_FRAMEBUFFER, 0)
         glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0)
         glBindFramebuffer(GL_FRAMEBUFFER, 0)

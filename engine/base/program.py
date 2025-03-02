@@ -1,7 +1,8 @@
 import glm
-from engine.base.shader import Shader
-from OpenGL.GL import *
 from OpenGL.error import NullFunctionError
+from OpenGL.GL import *
+
+from engine.base.shader import Shader
 
 
 class Program:
@@ -27,7 +28,7 @@ class Program:
         if glGetProgramiv(self.__programId, GL_LINK_STATUS) != GL_TRUE:
             info = glGetProgramInfoLog(self.__programId)
             self.delete()
-            raise RuntimeError(f'Error in program linking: {info}')
+            raise RuntimeError(f"Error in program linking: {info}")
 
     def __del__(self):
         self.delete()
@@ -67,13 +68,19 @@ class Program:
         glUniform4fv(self.getUniformLocation(name), 1, glm.value_ptr(vec))
 
     def setMat2(self, name, mat):
-        glUniformMatrix2fv(self.getUniformLocation(name), 1, GL_FALSE, glm.value_ptr(mat))
+        glUniformMatrix2fv(
+            self.getUniformLocation(name), 1, GL_FALSE, glm.value_ptr(mat)
+        )
 
     def setMat3(self, name, mat):
-        glUniformMatrix3fv(self.getUniformLocation(name), 1, GL_FALSE, glm.value_ptr(mat))
+        glUniformMatrix3fv(
+            self.getUniformLocation(name), 1, GL_FALSE, glm.value_ptr(mat)
+        )
 
     def setMat4(self, name, mat):
-        glUniformMatrix4fv(self.getUniformLocation(name), 1, GL_FALSE, glm.value_ptr(mat))
+        glUniformMatrix4fv(
+            self.getUniformLocation(name), 1, GL_FALSE, glm.value_ptr(mat)
+        )
 
 
 def get_linked_program(vert_path, frag_path):
