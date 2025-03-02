@@ -35,6 +35,7 @@ def set_voxel_positions(width, height, depth):
     voxel_colors = []
     voxels_without_visibility = []
 
+    print("First pass: calculating voxel positions and colors")
     for x in range(width):
         for y in range(height):
             for z in range(depth):
@@ -91,6 +92,7 @@ def set_voxel_positions(width, height, depth):
                         voxel_colors.append([r, g, b])
 
     # second pass: color voxels without visibility based on neighbors
+    print("Second pass: coloring voxels without visibility")
     for idx in voxels_without_visibility:
         x, y, z = voxel_positions[idx]
 
@@ -111,14 +113,18 @@ def set_voxel_positions(width, height, depth):
                     # check if neighbor is within bounds
                     if 0 <= nx < width and 0 <= ny < height and 0 <= nz < depth:
                         # find this neighbor in our voxel positions list
-                        neighbor_idx = voxel_positions.index((nx, ny, nz))
-                        # only use neighbors that aren't in the voxels_without_visibility list
-                        if neighbor_idx not in voxels_without_visibility:
-                            # weight by inverse distance
-                            distance = np.sqrt(dx**2 + dy**2 + dz**2)
-                            weight = 1.0 / distance
-                            neighbor_colors.append(voxel_colors[neighbor_idx])
-                            neighbor_weights.append(weight)
+                        try:
+                            neighbor_idx = voxel_positions.index((nx, ny, nz))
+                            # only use neighbors that aren't in the voxels_without_visibility list
+                            if neighbor_idx not in voxels_without_visibility:
+                                # weight by inverse distance (diagonal neighbors have less influence)
+                                distance = np.sqrt(dx**2 + dy**2 + dz**2)
+                                weight = 1.0 / distance
+                                neighbor_colors.append(voxel_colors[neighbor_idx])
+                                neighbor_weights.append(weight)
+                        except ValueError:
+                            # this position doesn't have a voxel
+                            pass
 
         # if we found neighbors with visibility information, use weighted average
         if neighbor_colors:
